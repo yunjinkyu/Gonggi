@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>3D 한국 전통 공기놀이 · 솔로 / 로컬 2인 / 온라인 2인</title>
+  <title>3D 한국 전통 공기놀이 · 솔로 / 로컬 2인 / 온라인 대결 & 관전</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Three.js r128 (Classic Script) -->
+  <!-- Three.js r128 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <!-- PeerJS (WebRTC P2P Multiplayer, Classic Script) -->
+  <!-- PeerJS (WebRTC P2P Multiplayer & Spectating) -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <!-- Google Fonts: Jua & Noto Sans KR -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -76,13 +76,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 1rem;
+      padding: 0.9rem;
       pointer-events: auto;
     }
 
     /* Warm Hanok Glassmorphic Panel */
     .glass-panel {
-      background: rgba(34, 22, 15, 0.84);
+      background: rgba(34, 22, 15, 0.85);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border: 1px solid rgba(255, 224, 178, 0.25);
@@ -176,16 +176,30 @@
     /* Floating Emoji Reaction Animation */
     @keyframes floatEmoji {
       0% { opacity: 0; transform: translate(-50%, 0) scale(0.5); }
-      18% { opacity: 1; transform: translate(-50%, -26px) scale(1.2); }
-      80% { opacity: 1; transform: translate(-50%, -125px) scale(1.0); }
-      100% { opacity: 0; transform: translate(-50%, -165px) scale(0.85); }
+      18% { opacity: 1; transform: translate(-50%, -26px) scale(1.22); }
+      80% { opacity: 1; transform: translate(-50%, -135px) scale(1.0); }
+      100% { opacity: 0; transform: translate(-50%, -175px) scale(0.85); }
     }
 
     .floating-emoji {
       position: fixed;
       z-index: 45;
       pointer-events: none;
-      animation: floatEmoji 1.75s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation: floatEmoji 1.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    /* Custom Thin Scrollbar */
+    .custom-scroll::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 999px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(251, 191, 36, 0.45);
+      border-radius: 999px;
     }
   </style>
 </head>
@@ -223,7 +237,7 @@
         </div>
       </div>
 
-      <!-- TOP-LEFT: 2P VS / ONLINE HUD (Hidden in 1P mode) -->
+      <!-- TOP-LEFT: 2P VS / ONLINE / SPECTATOR HUD -->
       <div id="hud-2p" class="hidden flex-col gap-1.5 pointer-events-auto">
         <div class="glass-panel rounded-2xl p-2 flex items-center gap-1.5 sm:gap-2">
           <!-- Player 1 Card -->
@@ -255,10 +269,13 @@
           </div>
         </div>
 
-        <!-- Online Connection Status & Turn Indicator Pill -->
+        <!-- Online Connection Status, Turn Indicator & Spectator Count -->
         <div id="online-status-row" class="hidden flex items-center gap-1.5 flex-wrap">
           <div id="net-status-pill" class="glass-panel rounded-full px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-emerald-300 border border-emerald-400/40">
             🟢 연결됨
+          </div>
+          <div id="spectator-count-pill" class="glass-panel rounded-full px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-purple-200 border border-purple-400/40">
+            👀 0명
           </div>
           <div id="online-turn-banner" class="glass-panel rounded-full px-3 py-0.5 text-[10px] sm:text-[11px] font-bold text-amber-200 border border-amber-300/40">
             🎯 내 차례!
@@ -311,32 +328,60 @@
       </div>
     </header>
 
-    <!-- MOBILE COMPACT STAGE BADGE & EMOJI BAR (Bottom-Left) -->
-    <div class="md:hidden absolute bottom-3 left-3 pointer-events-none flex flex-col gap-1.5 max-w-[62vw]">
-      <div id="emoji-bar-mobile" class="hidden pointer-events-auto flex items-center gap-1">
-        <button type="button" data-emoji="👏" class="emoji-btn glass-panel w-9 h-9 rounded-full text-base flex items-center justify-center active:scale-90 transition cursor-pointer">👏</button>
-        <button type="button" data-emoji="🔥" class="emoji-btn glass-panel w-9 h-9 rounded-full text-base flex items-center justify-center active:scale-90 transition cursor-pointer">🔥</button>
-        <button type="button" data-emoji="😂" class="emoji-btn glass-panel w-9 h-9 rounded-full text-base flex items-center justify-center active:scale-90 transition cursor-pointer">😂</button>
-        <button type="button" data-emoji="😱" class="emoji-btn glass-panel w-9 h-9 rounded-full text-base flex items-center justify-center active:scale-90 transition cursor-pointer">😱</button>
+    <!-- ======================================================================
+         BOTTOM-LEFT: CHAT PANEL + EMOJI BAR + STAGE BADGE (Never blocks center 3D)
+         ====================================================================== -->
+    <div class="fixed bottom-3 left-2.5 sm:left-4 z-20 pointer-events-none flex flex-col items-start gap-1.5 max-w-[calc(100vw-112px)] sm:max-w-[330px]">
+
+      <!-- Online Real-Time Chat Panel (Collapsible) -->
+      <div id="chat-wrapper" class="hidden pointer-events-auto w-[250px] sm:w-[300px] flex flex-col gap-1.5">
+        <!-- Expanded Chat Box -->
+        <div id="chat-box" class="glass-panel rounded-2xl border border-amber-300/30 overflow-hidden flex flex-col">
+          <div class="flex items-center justify-between px-3 py-1.5 bg-black/35 border-b border-white/10">
+            <span class="text-[11px] font-bold text-amber-200">💬 실시간 채팅</span>
+            <button id="chat-minimize-btn" type="button" class="text-[11px] text-amber-100/70 hover:text-white px-1 cursor-pointer">접기 ▾</button>
+          </div>
+          <div id="chat-messages" class="h-[118px] sm:h-[142px] overflow-y-auto custom-scroll px-2.5 py-2 space-y-1 text-[11px] sm:text-xs leading-snug">
+            <div class="text-amber-100/50 text-center py-4">응원 메시지나 채팅을 입력해 보세요!</div>
+          </div>
+          <div class="flex items-center gap-1 p-1.5 bg-black/35 border-t border-white/10">
+            <input id="chat-input" type="text" maxlength="60" placeholder="메시지 입력..."
+              class="flex-1 min-w-0 px-2.5 py-1.5 rounded-xl bg-stone-950/85 border border-white/15 text-white text-xs focus:outline-none focus:border-amber-400" />
+            <button id="chat-send-btn" type="button"
+              class="px-2.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-bold text-xs shrink-0 cursor-pointer transition">
+              전송
+            </button>
+          </div>
+        </div>
+
+        <!-- Collapsed Chat Toggle Button + Unread Badge -->
+        <div class="flex items-center gap-1.5">
+          <button id="chat-toggle-btn" type="button"
+            class="hidden glass-panel rounded-full px-3 py-1.5 border border-amber-300/40 text-xs font-bold text-amber-200 hover:bg-white/15 flex items-center gap-1.5 cursor-pointer transition">
+            <span>💬 채팅</span>
+            <span id="chat-unread-badge" class="hidden px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black leading-tight">0</span>
+          </button>
+        </div>
       </div>
-      <div class="glass-panel rounded-2xl px-3 py-2">
+
+      <!-- Online Emoji Bar (👏 🔥 😂 😱 🎉) -->
+      <div id="emoji-bar" class="hidden pointer-events-auto flex items-center gap-1 sm:gap-1.5">
+        <button type="button" data-emoji="👏" class="emoji-btn glass-panel w-8 h-8 sm:w-9 sm:h-9 rounded-full text-sm sm:text-base flex items-center justify-center hover:scale-110 active:scale-90 transition cursor-pointer">👏</button>
+        <button type="button" data-emoji="🔥" class="emoji-btn glass-panel w-8 h-8 sm:w-9 sm:h-9 rounded-full text-sm sm:text-base flex items-center justify-center hover:scale-110 active:scale-90 transition cursor-pointer">🔥</button>
+        <button type="button" data-emoji="😂" class="emoji-btn glass-panel w-8 h-8 sm:w-9 sm:h-9 rounded-full text-sm sm:text-base flex items-center justify-center hover:scale-110 active:scale-90 transition cursor-pointer">😂</button>
+        <button type="button" data-emoji="😱" class="emoji-btn glass-panel w-8 h-8 sm:w-9 sm:h-9 rounded-full text-sm sm:text-base flex items-center justify-center hover:scale-110 active:scale-90 transition cursor-pointer">😱</button>
+        <button type="button" data-emoji="🎉" class="emoji-btn glass-panel w-8 h-8 sm:w-9 sm:h-9 rounded-full text-sm sm:text-base flex items-center justify-center hover:scale-110 active:scale-90 transition cursor-pointer">🎉</button>
+      </div>
+
+      <!-- Mobile Compact Stage Badge -->
+      <div class="md:hidden glass-panel rounded-2xl px-3 py-1.5">
         <div id="stage-badge-sm" class="font-display text-sm text-amber-200 leading-tight">1단 · 하나 집기</div>
         <div id="progress-label-sm" class="text-[11px] font-bold text-white/90 mt-0.5">1/4회 · 1개 집기</div>
       </div>
-      <div class="text-[10px] text-amber-100/65 pl-1">배경 드래그로 3D 시점 회전</div>
-    </div>
 
-    <!-- DESKTOP HINT & EMOJI BAR (Bottom-Left) -->
-    <div class="hidden md:flex flex-col gap-2 absolute bottom-4 left-4 pointer-events-none">
-      <div id="emoji-bar-desktop" class="hidden pointer-events-auto flex items-center gap-1.5">
-        <span class="text-[11px] font-bold text-amber-200/80 mr-1">감정표현:</span>
-        <button type="button" data-emoji="👏" class="emoji-btn glass-panel w-10 h-10 rounded-full text-lg flex items-center justify-center hover:scale-110 active:scale-95 transition cursor-pointer">👏</button>
-        <button type="button" data-emoji="🔥" class="emoji-btn glass-panel w-10 h-10 rounded-full text-lg flex items-center justify-center hover:scale-110 active:scale-95 transition cursor-pointer">🔥</button>
-        <button type="button" data-emoji="😂" class="emoji-btn glass-panel w-10 h-10 rounded-full text-lg flex items-center justify-center hover:scale-110 active:scale-95 transition cursor-pointer">😂</button>
-        <button type="button" data-emoji="😱" class="emoji-btn glass-panel w-10 h-10 rounded-full text-lg flex items-center justify-center hover:scale-110 active:scale-95 transition cursor-pointer">😱</button>
-      </div>
-      <div class="glass-panel rounded-xl px-3 py-1.5 text-xs text-amber-100/75">
-        <span class="text-amber-300 font-bold">Space</span> 또는 오른쪽 <span class="text-amber-300 font-bold">잡기(HOLD)</span> 버튼 · 배경 드래그로 시점 회전
+      <!-- Desktop Controls Hint -->
+      <div class="hidden md:block glass-panel rounded-xl px-3 py-1 text-[11px] text-amber-100/75">
+        <span class="text-amber-300 font-bold">Space</span> 또는 오른쪽 <span class="text-amber-300 font-bold">잡기(HOLD)</span> · 배경 드래그 시점 회전
       </div>
     </div>
 
@@ -375,7 +420,7 @@
         </div>
       </div>
 
-      <!-- Bottom-Right HOLD Action Button -->
+      <!-- Bottom-Right HOLD Action Button (Hidden for Spectators) -->
       <button id="action-btn" type="button"
         class="hold-btn w-[78px] h-[78px] sm:w-[92px] sm:h-[92px] rounded-full flex flex-col items-center justify-center text-stone-950 cursor-pointer shrink-0 leading-tight px-1">
         <span id="action-btn-main" class="font-display text-lg sm:text-xl">잡기</span>
@@ -386,7 +431,7 @@
     <!-- ======================================================================
          CENTER FLOATING FEEDBACK TOAST (Non-blocking)
          ====================================================================== -->
-    <div id="feedback-toast" class="hidden fixed left-1/2 top-[28%] -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
+    <div id="feedback-toast" class="hidden fixed left-1/2 top-[26%] -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
       <div id="feedback-box" class="glass-panel rounded-2xl px-6 py-3.5 text-center border-2 max-w-[85vw]">
         <div id="feedback-title" class="font-display text-2xl sm:text-3xl tracking-wide">성공!</div>
         <div id="feedback-sub" class="text-xs sm:text-sm text-amber-100/90 mt-0.5 font-medium"></div>
@@ -394,7 +439,7 @@
     </div>
 
     <!-- ======================================================================
-         1P RETRY BANNER (Shown only in 1P mode when failed & retriesLeft > 0)
+         1P RETRY BANNER
          ====================================================================== -->
     <div id="retry-panel" class="hidden fixed left-1/2 bottom-5 -translate-x-1/2 z-30 pointer-events-auto w-[86vw] max-w-sm">
       <div class="glass-panel rounded-3xl p-4 border-2 border-rose-400/50 text-center space-y-2.5">
@@ -413,7 +458,7 @@
        MODAL 1: START / MODE & TARGET SCORE SETTINGS MODAL
        ======================================================================== -->
   <div id="start-modal" class="modal-backdrop">
-    <div class="glass-panel rounded-3xl max-w-md w-full p-5 sm:p-6 border border-amber-300/35 space-y-4 max-h-[92vh] overflow-y-auto">
+    <div class="glass-panel rounded-3xl max-w-md w-full p-5 sm:p-6 border border-amber-300/35 space-y-4 max-h-[92vh] overflow-y-auto custom-scroll">
       <div class="text-center space-y-1">
         <div class="inline-block px-3 py-0.5 rounded-full bg-amber-500/20 border border-amber-300/40 text-amber-200 text-xs font-bold">
           3D 한국 전통 손재주 게임
@@ -421,7 +466,7 @@
         <h1 class="font-display text-3xl sm:text-4xl text-amber-300 tracking-wide">3D 공기놀이</h1>
       </div>
 
-      <!-- Mode Toggle: 1P vs Local 2P vs Online 2P -->
+      <!-- Mode Toggle: 1P vs Local 2P vs Online 2P & Spectate -->
       <div class="grid grid-cols-3 gap-1.5">
         <button id="mode-1p-btn" type="button"
           class="py-2.5 px-2 rounded-2xl font-display text-sm sm:text-base border-2 border-amber-300 bg-amber-400 text-stone-950 shadow transition cursor-pointer">
@@ -433,7 +478,7 @@
         </button>
         <button id="mode-online-btn" type="button"
           class="py-2.5 px-2 rounded-2xl font-display text-sm sm:text-base border border-white/15 bg-white/10 text-amber-100 hover:bg-white/20 transition cursor-pointer">
-          🌐 온라인 2인
+          🌐 온라인
         </button>
       </div>
 
@@ -457,7 +502,7 @@
         </p>
       </div>
 
-      <!-- Online 2P Network Setup Box -->
+      <!-- Online 2P & Spectate Network Setup Box -->
       <div id="online-setup-box" class="hidden bg-black/30 rounded-2xl p-3.5 border border-emerald-400/35 space-y-3">
         <div>
           <label for="online-nick-input" class="block text-[11px] font-bold text-emerald-300 mb-1">내 닉네임</label>
@@ -465,21 +510,25 @@
             class="w-full px-3 py-2 rounded-xl bg-stone-950/85 border border-emerald-300/35 text-white font-bold text-sm focus:outline-none focus:border-emerald-400" />
         </div>
 
-        <!-- Online Sub-tabs: Create Room vs Join Room -->
-        <div class="grid grid-cols-2 gap-1.5 bg-stone-950/70 p-1 rounded-xl border border-white/10">
+        <!-- Online 3 Sub-tabs: Host / Join / Spectate -->
+        <div class="grid grid-cols-3 gap-1 bg-stone-950/70 p-1 rounded-xl border border-white/10">
           <button id="online-tab-host" type="button"
-            class="py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-stone-950 transition cursor-pointer">
+            class="py-1.5 rounded-lg text-[11px] sm:text-xs font-bold bg-emerald-500 text-stone-950 transition cursor-pointer">
             🏠 방 만들기
           </button>
           <button id="online-tab-join" type="button"
-            class="py-1.5 rounded-lg text-xs font-bold text-amber-100/80 hover:bg-white/10 transition cursor-pointer">
+            class="py-1.5 rounded-lg text-[11px] sm:text-xs font-bold text-amber-100/80 hover:bg-white/10 transition cursor-pointer">
             🚪 방 참여
+          </button>
+          <button id="online-tab-spectate" type="button"
+            class="py-1.5 rounded-lg text-[11px] sm:text-xs font-bold text-amber-100/80 hover:bg-white/10 transition cursor-pointer">
+            👀 관전하기
           </button>
         </div>
 
         <!-- Host Sub-panel -->
         <div id="online-host-panel" class="space-y-2.5">
-          <div id="host-before-create" class="space-y-2">
+          <div id="host-before-create">
             <button id="create-room-btn" type="button"
               class="btn-primary w-full py-2.5 rounded-xl font-display text-base text-stone-950">
               방 생성하기
@@ -487,19 +536,28 @@
           </div>
 
           <div id="host-waiting-box" class="hidden bg-emerald-950/50 border border-emerald-400/40 rounded-2xl p-3 text-center space-y-2.5">
-            <div class="text-[11px] font-bold text-emerald-300">방 코드 (상대방에게 알려주세요)</div>
+            <div class="flex items-center justify-between text-[11px] font-bold px-1">
+              <span class="text-emerald-300">4자리 방 코드</span>
+              <span id="host-waiting-spec-count" class="text-purple-200">👀 관전자 0명</span>
+            </div>
             <div id="room-code-display" class="font-display text-4xl tracking-[0.22em] text-amber-300 select-all">0000</div>
+
             <div class="grid grid-cols-2 gap-1.5">
-              <button id="copy-code-btn" type="button"
-                class="py-2 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 text-xs font-bold text-white transition cursor-pointer">
-                📋 코드 복사
-              </button>
               <button id="copy-link-btn" type="button"
-                class="py-2 px-2 rounded-xl bg-emerald-500/30 hover:bg-emerald-500/45 border border-emerald-300/40 text-xs font-bold text-emerald-200 transition cursor-pointer">
-                🔗 초대 링크 복사
+                class="py-2 px-2 rounded-xl bg-emerald-500/30 hover:bg-emerald-500/45 border border-emerald-300/45 text-[11px] sm:text-xs font-bold text-emerald-200 transition cursor-pointer">
+                🔗 대결 초대 링크
+              </button>
+              <button id="copy-spec-link-btn" type="button"
+                class="py-2 px-2 rounded-xl bg-purple-500/30 hover:bg-purple-500/45 border border-purple-300/45 text-[11px] sm:text-xs font-bold text-purple-200 transition cursor-pointer">
+                👀 관전 링크 복사
               </button>
             </div>
-            <div id="host-status-text" class="text-[11px] text-amber-200 animate-pulse">⏳ 상대방 입장을 기다리는 중...</div>
+            <button id="copy-code-btn" type="button"
+              class="w-full py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-[11px] font-bold text-white transition cursor-pointer">
+              📋 방 번호만 복사
+            </button>
+
+            <div id="host-status-text" class="text-[11px] text-amber-200 animate-pulse">⏳ 도전자 입장을 기다리는 중...</div>
             <button id="cancel-room-btn" type="button"
               class="w-full py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/30 text-[11px] font-bold text-rose-200 cursor-pointer">
               방 생성 취소
@@ -510,15 +568,29 @@
         <!-- Guest Sub-panel -->
         <div id="online-join-panel" class="hidden space-y-2.5">
           <div>
-            <label for="join-code-input" class="block text-[11px] text-amber-200/80 mb-1">4자리 방 코드 입력</label>
+            <label for="join-code-input" class="block text-[11px] text-amber-200/80 mb-1">4자리 방 번호 입력 (도전자로 참가)</label>
             <input id="join-code-input" type="text" inputmode="numeric" maxlength="4" placeholder="예: 4829"
               class="w-full px-3 py-2.5 rounded-xl bg-stone-950/90 border border-amber-300/40 text-amber-300 font-display text-2xl tracking-[0.28em] text-center focus:outline-none focus:border-emerald-400" />
           </div>
           <button id="join-room-btn" type="button"
             class="btn-primary w-full py-2.5 rounded-xl font-display text-base text-stone-950">
-            입장하기
+            대결 입장하기
           </button>
           <div id="join-status-text" class="text-[11px] text-center text-amber-100/80 min-h-[16px]"></div>
+        </div>
+
+        <!-- Spectator Sub-panel -->
+        <div id="online-spectate-panel" class="hidden space-y-2.5">
+          <div>
+            <label for="spec-code-input" class="block text-[11px] text-purple-200/85 mb-1">4자리 방 번호 입력 (진행 중 중도 입장 가능)</label>
+            <input id="spec-code-input" type="text" inputmode="numeric" maxlength="4" placeholder="예: 4829"
+              class="w-full px-3 py-2.5 rounded-xl bg-stone-950/90 border border-purple-400/45 text-purple-200 font-display text-2xl tracking-[0.28em] text-center focus:outline-none focus:border-purple-400" />
+          </div>
+          <button id="spectate-room-btn" type="button"
+            class="w-full py-2.5 rounded-xl font-display text-base bg-gradient-to-b from-purple-400 to-purple-600 border-2 border-purple-200 text-stone-950 shadow-lg hover:brightness-105 active:translate-y-0.5 transition cursor-pointer">
+            👀 관전 입장하기
+          </button>
+          <div id="spec-status-text" class="text-[11px] text-center text-purple-200/85 min-h-[16px]"></div>
         </div>
       </div>
 
@@ -568,7 +640,7 @@
           </button>
           <button id="cancel-settings-btn" type="button"
             class="hidden flex-1 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold text-amber-100 transition cursor-pointer">
-            계속 플레이
+            계속 보기/플레이
           </button>
         </div>
       </div>
@@ -659,7 +731,7 @@
        MODAL 5: RULES & PROBABILITY TABLE MODAL
        ======================================================================== -->
   <div id="rules-modal" class="modal-backdrop modal-hidden">
-    <div class="glass-panel rounded-3xl max-w-md w-full p-5 sm:p-6 border border-amber-300/40 space-y-4 max-h-[88vh] overflow-y-auto">
+    <div class="glass-panel rounded-3xl max-w-md w-full p-5 sm:p-6 border border-amber-300/40 space-y-4 max-h-[88vh] overflow-y-auto custom-scroll">
       <div class="flex items-center justify-between">
         <h2 class="font-display text-2xl text-amber-300">📜 규칙 및 확률표</h2>
         <button id="close-rules-btn" type="button"
@@ -669,15 +741,16 @@
       <div class="space-y-2 text-xs sm:text-sm text-amber-100/90 leading-relaxed">
         <p><strong class="text-amber-300">조작 방법:</strong> 오른쪽 <strong>잡기(HOLD)</strong> 버튼(또는 PC <kbd class="px-1.5 py-0.5 rounded bg-white/15">Space</kbd>)을 누르고 있다가 초록색 목표 구간에 들어왔을 때 놓으세요.</p>
         <p><strong class="text-emerald-300">회차 난이도:</strong> 5단 꺾기 성공 후 목표 점수 미달성 시 다음 회차로 넘어가며, 매 회차 성공 폭이 이전 대비 <strong>10%씩 축소</strong>됩니다. (최소 폭 3%)</p>
+        <p><strong class="text-purple-300">관전 &amp; 채팅:</strong> 온라인 방 코드나 관전 링크로 최대 10명까지 중도 입장해 실시간 관전, 이모지 응원, 채팅을 함께 즐길 수 있습니다.</p>
       </div>
 
       <div class="bg-black/35 rounded-2xl p-3 border border-white/10">
         <div class="text-xs font-bold text-amber-300 mb-2">단계별 1회차 성공 구간</div>
         <div class="grid grid-cols-2 gap-1.5 text-[11px] sm:text-xs">
-          <div class="bg-white/5 rounded-lg px-2.5 py-1.5 flex justify-between"><span>1단 (하나)</span><strong class="text-emerald-300">45~95 (폭 50)</strong></div>
-          <div class="bg-white/5 rounded-lg px-2.5 py-1.5 flex justify-between"><span>2단 (둘)</span><strong class="text-emerald-300">55~95 (폭 40)</strong></div>
-          <div class="bg-white/5 rounded-lg px-2.5 py-1.5 flex justify-between"><span>3단 (셋)</span><strong class="text-emerald-300">65~95 (폭 30)</strong></div>
-          <div class="bg-white/5 rounded-lg px-2.5 py-1.5 flex justify-between"><span>4단 (넷)</span><strong class="text-emerald-300">75~95 (폭 20)</strong></div>
+          <div class="bg-white/5 rounded-lg px-2.5 py-1.5 flex justify-between"><span>1단 (하나 ×4)</span><strong class="text-emerald-300">45~95 (폭 50)</strong></div>
+          <div class="bg-white/5 rounded-lg px-2.5 py-1.5 flex justify-between"><span>2단 (둘 ×2)</span><strong class="text-emerald-300">55~95 (폭 40)</strong></div>
+          <div class="bg-white/5 rounded-lg px-2.5 py-1.5 flex justify-between"><span>3단 (셋 후 하나)</span><strong class="text-emerald-300">65~95 (폭 30)</strong></div>
+          <div class="bg-white/5 rounded-lg px-2.5 py-1.5 flex justify-between"><span>4단 (넷 잡기)</span><strong class="text-emerald-300">75~95 (폭 20)</strong></div>
           <div class="col-span-2 bg-pink-500/15 border border-pink-400/30 rounded-lg px-2.5 py-1.5 flex justify-between"><span>5단 (꺾기)</span><strong class="text-pink-300">80~90 (폭 10)</strong></div>
         </div>
       </div>
@@ -687,9 +760,9 @@
         <div class="grid grid-cols-3 gap-1.5 text-center text-[11px] sm:text-xs">
           <div class="bg-rose-500/15 rounded-lg py-1.5"><div class="text-rose-300 font-bold">0개 (실패)</div><div>5%</div></div>
           <div class="bg-white/5 rounded-lg py-1.5"><div class="text-amber-200 font-bold">1개 (+1점)</div><div>10%</div></div>
-          <div class="bg-white/5 rounded-lg py-1.5"><div class="text-amber-200 font-bold">2개 (+2점)</div><div>15%</div></div>
-          <div class="bg-white/5 rounded-lg py-1.5"><div class="text-emerald-200 font-bold">3개 (+3점)</div><div>25%</div></div>
-          <div class="bg-white/5 rounded-lg py-1.5"><div class="text-emerald-300 font-bold">4개 (+4점)</div><div>25%</div></div>
+          <div class="bg-white/5 rounded-lg py-1.5"><div class="text-amber-200 font-bold">2개 (+2점)</div><div>20%</div></div>
+          <div class="bg-emerald-500/15 rounded-lg py-1.5"><div class="text-emerald-200 font-bold">3개 (+3점)</div><div>25%</div></div>
+          <div class="bg-emerald-500/15 rounded-lg py-1.5"><div class="text-emerald-300 font-bold">4개 (+4점)</div><div>20%</div></div>
           <div class="bg-amber-500/20 rounded-lg py-1.5"><div class="text-amber-300 font-bold">5개 (+5점)</div><div>20%</div></div>
         </div>
       </div>
@@ -723,6 +796,8 @@
        * 1. GAME CONFIGURATION & CONSTANTS
        * -------------------------------------------------------------------------- */
       const MAX_RETRIES = 3;
+      const MAX_SPECTATORS = 10;
+      const MAX_CHAT_MESSAGES = 50;
       const PEER_PREFIX = 'gonggi3d-room-';
       const PEER_CONFIG = {
         config: {
@@ -784,13 +859,13 @@
         }
       };
 
-      // Stage 5 Back-of-hand probabilities (0:5%, 1:10%, 2:15%, 3:25%, 4:25%, 5:20%)
+      // Stage 5 Back-of-hand probabilities: 0(5%), 1(10%), 2(20%), 3(25%), 4(20%), 5(20%)
       const STAGE5_PROBS = [
         { count: 0, weight: 5 },
         { count: 1, weight: 10 },
-        { count: 2, weight: 15 },
+        { count: 2, weight: 20 },
         { count: 3, weight: 25 },
-        { count: 4, weight: 25 },
+        { count: 4, weight: 20 },
         { count: 5, weight: 20 }
       ];
 
@@ -818,7 +893,7 @@
       }
 
       /* --------------------------------------------------------------------------
-       * 2. SAFE WEB AUDIO API SOUND MANAGER
+       * 2. WEB AUDIO API SOUND MANAGER (INCLUDING CHAT PING)
        * -------------------------------------------------------------------------- */
       class SoundManager {
         constructor() {
@@ -988,12 +1063,31 @@
             osc.stop(now + 0.13);
           } catch (e) {}
         }
+        playChatPing() {
+          const ctx = this.ensureContext();
+          if (!ctx) return;
+          try {
+            const now = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, now);
+            osc.frequency.setValueAtTime(1174.66, now + 0.055);
+            gain.gain.setValueAtTime(0.001, now);
+            gain.gain.linearRampToValueAtTime(0.08, now + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.15);
+          } catch (e) {}
+        }
       }
 
       const sound = new SoundManager();
 
       /* --------------------------------------------------------------------------
-       * 3. THREE.JS 3D SCENE (SAFE INITIALIZATION)
+       * 3. THREE.JS 3D SCENE
        * -------------------------------------------------------------------------- */
       let scene = null, camera = null, renderer = null;
       let stones = [], particles = [];
@@ -1346,7 +1440,7 @@
       }
 
       /* --------------------------------------------------------------------------
-       * 4. GAME STATE (SUPPORTS 1P, LOCAL 2P & ONLINE 2P)
+       * 4. GAME STATE & HOST-HUB NETWORK STATE
        * -------------------------------------------------------------------------- */
       const game = {
         mode: '1p', // '1p' | '2p' | 'online'
@@ -1369,44 +1463,109 @@
 
       const net = {
         peer: null,
-        conn: null,
-        role: null,
+        conn: null,            // For guest & spectator: connection to Host
+        guestConn: null,       // For host: connection to Guest
+        spectators: [],        // For host: [{ conn, name }] (max 10)
+        spectatorCount: 0,
+        role: null,            // 'host' | 'guest' | 'spectator' | null
+        myName: '공기고수',
         roomCode: '',
-        connected: false,
-        myIdx: 0,
+        connected: false,      // True once peer room/link is active
+        matchActive: false,    // True once guest joined and match started
+        myIdx: 0,              // 0 = Host, 1 = Guest, -1 = Spectator
         lastGaugeSend: 0,
         myRematch: false,
         oppRematch: false
+      };
+
+      const chatState = {
+        messages: [],          // { roleTag, sender, text, system }
+        isOpen: window.innerWidth >= 640,
+        unread: 0
       };
 
       function curPlayer() {
         return game.players[game.activeIdx];
       }
 
-      function isMyTurn() {
-        if (game.mode !== 'online') return true;
-        return net.connected && game.activeIdx === net.myIdx;
+      function isSpectator() {
+        return game.mode === 'online' && net.role === 'spectator';
       }
 
-      function sendNet(payload) {
-        if (game.mode !== 'online' || !net.conn || !net.conn.open) return;
-        try {
-          net.conn.send(payload);
-        } catch (err) {
-          console.warn('PeerJS send error:', err);
+      function isMyTurn() {
+        if (game.mode !== 'online') return true;
+        if (net.role === 'spectator') return false;
+        return net.connected && net.matchActive && game.activeIdx === net.myIdx;
+      }
+
+      function myRoleTag() {
+        if (net.role === 'host') return '방장';
+        if (net.role === 'guest') return '도전자';
+        return '관전';
+      }
+
+      // Host sends to Guest + all Spectators (optionally excluding one conn)
+      function broadcastFromHost(payload, excludeConn = null) {
+        if (net.role !== 'host') return;
+        if (net.guestConn && net.guestConn.open && net.guestConn !== excludeConn) {
+          try { net.guestConn.send(payload); } catch (e) {}
         }
+        for (const sp of net.spectators) {
+          if (sp.conn && sp.conn.open && sp.conn !== excludeConn) {
+            try { sp.conn.send(payload); } catch (e) {}
+          }
+        }
+      }
+
+      // Send packet from current client (Host broadcasts to all; Guest/Spectator sends to Host)
+      function sendNet(payload) {
+        if (game.mode !== 'online') return;
+        if (net.role === 'host') {
+          broadcastFromHost(payload);
+        } else if (net.conn && net.conn.open) {
+          try { net.conn.send(payload); } catch (e) {}
+        }
+      }
+
+      function buildFullSyncState() {
+        return {
+          started: game.started,
+          matchActive: net.matchActive,
+          targetScore: game.targetScore,
+          speedIdx: game.speedIdx,
+          activeIdx: game.activeIdx,
+          players: game.players.map((pl) => ({ ...pl })),
+          stepIndex: game.stepIndex,
+          phase: game.phase,
+          gaugeVal: game.gaugeVal,
+          stage5LandedCount: game.stage5LandedCount,
+          stage5LandedIds: game.stage5LandedIds.slice(),
+          spectatorCount: net.spectatorCount,
+          chatHistory: chatState.messages.slice(-20)
+        };
       }
 
       function cleanupNetwork() {
         net.connected = false;
+        net.matchActive = false;
         net.role = null;
         net.roomCode = '';
+        net.spectatorCount = 0;
         net.myRematch = false;
         net.oppRematch = false;
+
         if (net.conn) {
           try { net.conn.close(); } catch (e) {}
           net.conn = null;
         }
+        if (net.guestConn) {
+          try { net.guestConn.close(); } catch (e) {}
+          net.guestConn = null;
+        }
+        for (const sp of net.spectators) {
+          try { if (sp.conn) sp.conn.close(); } catch (e) {}
+        }
+        net.spectators = [];
         if (net.peer) {
           try { net.peer.destroy(); } catch (e) {}
           net.peer = null;
@@ -1414,7 +1573,7 @@
       }
 
       /* --------------------------------------------------------------------------
-       * 5. DOM REFERENCES & MODAL HELPERS
+       * 5. DOM REFERENCES, MODAL HELPERS & CHAT UI
        * -------------------------------------------------------------------------- */
       const elStartModal = document.getElementById('start-modal');
       const elTurnModal = document.getElementById('turn-modal');
@@ -1437,12 +1596,8 @@
       const elGaugeFill = document.getElementById('gauge-fill');
       const elGaugeMarker = document.getElementById('gauge-marker');
 
-      function showModal(el) {
-        if (el) el.classList.remove('modal-hidden');
-      }
-      function hideModal(el) {
-        if (el) el.classList.add('modal-hidden');
-      }
+      function showModal(el) { if (el) el.classList.remove('modal-hidden'); }
+      function hideModal(el) { if (el) el.classList.add('modal-hidden'); }
       function isAnyModalOpen() {
         return (
           !elStartModal.classList.contains('modal-hidden') ||
@@ -1452,6 +1607,14 @@
           !elRulesModal.classList.contains('modal-hidden') ||
           !elDisconnectModal.classList.contains('modal-hidden')
         );
+      }
+
+      function escapeHtml(str) {
+        return String(str || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
       }
 
       function copyToClipboard(text) {
@@ -1477,16 +1640,90 @@
         wrap.className = 'floating-emoji flex flex-col items-center';
         const leftPct = 28 + Math.random() * 44;
         wrap.style.left = `${leftPct}%`;
-        wrap.style.bottom = '20%';
+        wrap.style.bottom = '22%';
         wrap.innerHTML = `
-          <div class="text-4xl sm:text-5xl drop-shadow-lg">${emoji}</div>
-          <div class="text-[10px] font-bold bg-black/65 text-amber-200 px-2 py-0.5 rounded-full mt-0.5 whitespace-nowrap">${senderName}</div>
+          <div class="text-4xl sm:text-5xl drop-shadow-lg">${escapeHtml(emoji)}</div>
+          <div class="text-[10px] font-bold bg-black/70 text-amber-200 px-2 py-0.5 rounded-full mt-0.5 whitespace-nowrap">${escapeHtml(senderName)}</div>
         `;
         layer.appendChild(wrap);
         sound.playEmoji();
         setTimeout(() => {
           if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
-        }, 1800);
+        }, 1850);
+      }
+
+      function resetChat() {
+        chatState.messages = [];
+        chatState.unread = 0;
+        renderChatMessages();
+        updateChatPanelVisibility();
+      }
+
+      function appendChatMessage(msg, playPing = true) {
+        chatState.messages.push(msg);
+        if (chatState.messages.length > MAX_CHAT_MESSAGES) {
+          chatState.messages.shift();
+        }
+        if (!chatState.isOpen && !msg.isSelf) {
+          chatState.unread += 1;
+        }
+        if (playPing && !msg.isSelf) {
+          sound.playChatPing();
+        }
+        renderChatMessages();
+        updateChatPanelVisibility();
+      }
+
+      function renderChatMessages() {
+        const container = document.getElementById('chat-messages');
+        if (!container) return;
+        if (chatState.messages.length === 0) {
+          container.innerHTML = '<div class="text-amber-100/50 text-center py-4">응원 메시지나 채팅을 입력해 보세요!</div>';
+          return;
+        }
+        container.innerHTML = chatState.messages.map((m) => {
+          if (m.system) {
+            return `<div class="text-center text-[10px] text-emerald-300/90 bg-emerald-950/40 rounded-lg py-0.5 px-2">${escapeHtml(m.text)}</div>`;
+          }
+          const badgeClass = m.roleTag === '방장'
+            ? 'bg-amber-400/25 text-amber-300 border-amber-400/40'
+            : m.roleTag === '도전자'
+            ? 'bg-sky-400/25 text-sky-300 border-sky-400/40'
+            : 'bg-purple-400/25 text-purple-200 border-purple-400/40';
+          return `
+            <div class="break-words">
+              <span class="inline-block px-1 py-0.2 rounded border text-[9px] font-bold mr-1 ${badgeClass}">[${escapeHtml(m.roleTag)}]</span>
+              <span class="font-bold text-amber-100 mr-1">${escapeHtml(m.sender)}:</span>
+              <span class="text-white/95">${escapeHtml(m.text)}</span>
+            </div>
+          `;
+        }).join('');
+        container.scrollTop = container.scrollHeight;
+      }
+
+      function updateChatPanelVisibility() {
+        const showOnlineSocial = game.mode === 'online' && net.connected;
+        document.getElementById('chat-wrapper').classList.toggle('hidden', !showOnlineSocial);
+        document.getElementById('emoji-bar').classList.toggle('hidden', !showOnlineSocial);
+
+        const chatBox = document.getElementById('chat-box');
+        const toggleBtn = document.getElementById('chat-toggle-btn');
+        const unreadBadge = document.getElementById('chat-unread-badge');
+
+        if (chatState.isOpen) {
+          chatBox.classList.remove('hidden');
+          toggleBtn.classList.add('hidden');
+          chatState.unread = 0;
+        } else {
+          chatBox.classList.add('hidden');
+          toggleBtn.classList.remove('hidden');
+          if (chatState.unread > 0) {
+            unreadBadge.textContent = chatState.unread > 99 ? '99+' : String(chatState.unread);
+            unreadBadge.classList.remove('hidden');
+          } else {
+            unreadBadge.classList.add('hidden');
+          }
+        }
       }
 
       let toastTimer = null;
@@ -1563,17 +1800,25 @@
 
           const onlineRow = document.getElementById('online-status-row');
           const netPill = document.getElementById('net-status-pill');
+          const specPill = document.getElementById('spectator-count-pill');
           const turnBanner = document.getElementById('online-turn-banner');
           if (game.mode === 'online') {
             onlineRow.classList.remove('hidden');
-            if (net.connected) {
-              netPill.textContent = `🟢 연결됨 (${net.roomCode})`;
-              netPill.className = 'glass-panel rounded-full px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-emerald-300 border border-emerald-400/40';
-            } else {
-              netPill.textContent = '🔴 연결 끊김';
-              netPill.className = 'glass-panel rounded-full px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-rose-300 border border-rose-400/40';
-            }
-            if (myTurnNow) {
+            netPill.textContent = net.connected ? `🟢 방 ${net.roomCode}` : '🔴 연결 끊김';
+            netPill.className = net.connected
+              ? 'glass-panel rounded-full px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-emerald-300 border border-emerald-400/40'
+              : 'glass-panel rounded-full px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-rose-300 border border-rose-400/40';
+            specPill.textContent = `👀 ${net.spectatorCount}명`;
+
+            const hostWaitingSpec = document.getElementById('host-waiting-spec-count');
+            if (hostWaitingSpec) hostWaitingSpec.textContent = `👀 관전자 ${net.spectatorCount}명`;
+
+            if (isSpectator()) {
+              turnBanner.textContent = net.matchActive
+                ? `👀 관전 중 (현재 ${p.name}님 차례)`
+                : '👀 관전 대기 중 (도전자 입장 대기)';
+              turnBanner.className = 'glass-panel rounded-full px-3 py-0.5 text-[10px] sm:text-[11px] font-bold text-purple-200 border border-purple-400/55 bg-purple-500/20';
+            } else if (myTurnNow) {
               turnBanner.textContent = '🎯 내 차례!';
               turnBanner.className = 'glass-panel rounded-full px-3 py-0.5 text-[10px] sm:text-[11px] font-bold text-amber-200 border border-amber-300/60 bg-amber-500/20';
             } else {
@@ -1585,9 +1830,7 @@
           }
         }
 
-        const showEmoji = game.mode === 'online' && net.connected && game.started;
-        document.getElementById('emoji-bar-mobile').classList.toggle('hidden', !showEmoji);
-        document.getElementById('emoji-bar-desktop').classList.toggle('hidden', !showEmoji);
+        updateChatPanelVisibility();
 
         const prefix = game.mode !== '1p' ? `[${p.name}] ` : '';
         document.getElementById('stage-badge-lg').textContent = `${prefix}${cfg.name}`;
@@ -1616,29 +1859,33 @@
           document.getElementById('retry-stage-btn').textContent = `재시도 (남은 기회 ${p.retriesLeft}회)`;
         }
 
+        // Hide HOLD button completely for Spectators
+        elActionBtn.classList.toggle('hidden', isSpectator());
         elActionBtn.classList.remove('stage5-roll', 'holding');
-        if (game.mode === 'online' && !myTurnNow) {
-          elActionBtn.disabled = true;
-          elActionBtnMain.textContent = '관전';
-          elActionBtnSub.textContent = '상대 차례';
-        } else if (game.phase === 'stage5_roll') {
-          elActionBtn.disabled = false;
-          elActionBtn.classList.add('stage5-roll');
-          elActionBtnMain.textContent = '손등';
-          elActionBtnSub.textContent = '확률 던지기';
-        } else if (game.phase === 'charging') {
-          elActionBtn.disabled = false;
-          elActionBtn.classList.add('holding');
-          elActionBtnMain.textContent = '놓기!';
-          elActionBtnSub.textContent = 'RELEASE';
-        } else if (game.phase === 'ready') {
-          elActionBtn.disabled = false;
-          elActionBtnMain.textContent = p.stage === 5 ? '꺾기' : '잡기';
-          elActionBtnSub.textContent = 'HOLD';
-        } else {
-          elActionBtn.disabled = true;
-          elActionBtnMain.textContent = '대기';
-          elActionBtnSub.textContent = '...';
+        if (!isSpectator()) {
+          if (game.mode === 'online' && !myTurnNow) {
+            elActionBtn.disabled = true;
+            elActionBtnMain.textContent = '관전';
+            elActionBtnSub.textContent = '상대 차례';
+          } else if (game.phase === 'stage5_roll') {
+            elActionBtn.disabled = false;
+            elActionBtn.classList.add('stage5-roll');
+            elActionBtnMain.textContent = '손등';
+            elActionBtnSub.textContent = '확률 던지기';
+          } else if (game.phase === 'charging') {
+            elActionBtn.disabled = false;
+            elActionBtn.classList.add('holding');
+            elActionBtnMain.textContent = '놓기!';
+            elActionBtnSub.textContent = 'RELEASE';
+          } else if (game.phase === 'ready') {
+            elActionBtn.disabled = false;
+            elActionBtnMain.textContent = p.stage === 5 ? '꺾기' : '잡기';
+            elActionBtnSub.textContent = 'HOLD';
+          } else {
+            elActionBtn.disabled = true;
+            elActionBtnMain.textContent = '대기';
+            elActionBtnSub.textContent = '...';
+          }
         }
       }
 
@@ -1656,10 +1903,11 @@
       }
 
       /* --------------------------------------------------------------------------
-       * 6. CORE GAMEPLAY FLOW & PEERJS ONLINE MULTIPLAYER
+       * 6. CORE GAMEPLAY FLOW & PEERJS HOST-HUB MULTIPLAYER + SPECTATOR
        * -------------------------------------------------------------------------- */
       function startNewGame() {
         cleanupNetwork();
+        resetChat();
         const targetVal = parseInt(document.getElementById('custom-target-input').value, 10);
         game.targetScore = Math.max(1, Math.min(999, isNaN(targetVal) ? 10 : targetVal));
         game.started = true;
@@ -1690,10 +1938,14 @@
       function startOnlineMatch(config) {
         game.mode = 'online';
         game.started = true;
+        net.matchActive = true;
         game.targetScore = config.targetScore;
         game.speedIdx = config.speedIdx;
         game.activeIdx = config.activeIdx || 0;
         game.players = config.players.map((pl) => ({ ...pl }));
+        if (typeof config.spectatorCount === 'number') {
+          net.spectatorCount = config.spectatorCount;
+        }
         net.myRematch = false;
         net.oppRematch = false;
 
@@ -1709,72 +1961,244 @@
 
         setupStage(1);
         sound.playTurnSwitch();
+        const subMsg = isSpectator()
+          ? `👀 관전 중 · ${curPlayer().name}님 차례로 시작합니다!`
+          : isMyTurn()
+          ? '🎯 내 차례부터 시작합니다!'
+          : `👀 ${curPlayer().name}님 차례입니다!`;
+        showToast(`${game.players[0].name} vs ${game.players[1].name}`, subMsg, 'info', 1800);
+      }
+
+      function applySpectatorMidGameSync(st) {
+        game.mode = 'online';
+        game.started = Boolean(st.started);
+        net.matchActive = Boolean(st.matchActive);
+        game.targetScore = st.targetScore || 10;
+        game.speedIdx = st.speedIdx || 1;
+        game.activeIdx = st.activeIdx || 0;
+        game.players = (st.players || game.players).map((pl) => ({ ...pl }));
+        game.stepIndex = st.stepIndex || 0;
+        game.phase = st.phase || 'ready';
+        game.gaugeVal = st.gaugeVal || 0;
+        game.stage5LandedCount = st.stage5LandedCount || 0;
+        game.stage5LandedIds = (st.stage5LandedIds || []).slice();
+        net.spectatorCount = st.spectatorCount || 1;
+
+        if (Array.isArray(st.chatHistory)) {
+          chatState.messages = st.chatHistory.slice(-MAX_CHAT_MESSAGES);
+          renderChatMessages();
+        }
+
+        syncSpeedButtonsUI();
+        hideModal(elStartModal);
+        hideModal(elVictoryModal);
+        hideModal(elGameOverModal);
+        hideModal(elDisconnectModal);
+
+        // Immediately arrange 3D scene to reflect current stage without delay
+        if (threeReady) {
+          const p = curPlayer();
+          if (p.stage <= 3) {
+            setCameraFocus('overview');
+            setHandPose('ready_palm');
+            const pts = generateFloorPositions(4);
+            stones.forEach((stone, idx) => {
+              if (idx === 0) {
+                stone.state = 'hand_palm';
+                stone.handOffset.copy(PALM_OFFSETS[2]);
+              } else {
+                stone.state = 'floor';
+                stone.pos.copy(pts[idx - 1]);
+                stone.mesh.position.copy(stone.pos);
+              }
+            });
+          } else if (p.stage === 4) {
+            setCameraFocus('overview');
+            setHandPose('ready_palm');
+            stones.forEach((stone, idx) => {
+              stone.state = 'hand_palm';
+              stone.handOffset.copy(PALM_OFFSETS[idx]);
+            });
+          } else {
+            setCameraFocus('stage5');
+            setHandPose(game.stepIndex === 1 ? 'back_of_hand' : 'ready_palm');
+            stones.forEach((stone, idx) => {
+              if (game.stepIndex === 1 && game.stage5LandedIds.includes(stone.id)) {
+                const slot = game.stage5LandedIds.indexOf(stone.id);
+                stone.state = 'hand_back';
+                stone.handOffset.copy(BACK_OFFSETS[slot]);
+              } else {
+                stone.state = 'hand_palm';
+                stone.handOffset.copy(PALM_OFFSETS[idx]);
+              }
+            });
+          }
+        }
+
+        renderGaugeUI();
+        updateHUD();
         showToast(
-          `${game.players[0].name} vs ${game.players[1].name}`,
-          isMyTurn() ? '🎯 내 차례부터 시작합니다!' : `👀 ${curPlayer().name}님 차례입니다!`,
+          '👀 관전 입장 완료!',
+          net.matchActive ? `${curPlayer().name}님 차례를 실시간으로 관전합니다` : '도전자 입장을 기다리고 있습니다',
           'info',
           1800
         );
       }
 
-      function setupPeerConnection(conn) {
+      // Host accepts incoming connection (either Guest or Spectator)
+      function handleHostIncomingConnection(conn) {
+        conn.on('data', (data) => {
+          if (!data || typeof data !== 'object') return;
+
+          if (data.type === 'hello') {
+            const joinName = (data.name || '').trim() || (data.role === 'spectator' ? '관전자' : '도전자');
+            if (data.role === 'guest') {
+              if (net.guestConn && net.guestConn.open) {
+                conn.send({ type: 'room_full', reason: '이미 도전자 자리가 찼습니다. 관전하기로 입장해 보세요!' });
+                setTimeout(() => { try { conn.close(); } catch (e) {} }, 250);
+                return;
+              }
+              net.guestConn = conn;
+              const targetVal = parseInt(document.getElementById('custom-target-input').value, 10);
+              const tScore = Math.max(1, Math.min(999, isNaN(targetVal) ? 10 : targetVal));
+              const matchConfig = {
+                type: 'start_match',
+                targetScore: tScore,
+                speedIdx: game.speedIdx,
+                activeIdx: 0,
+                spectatorCount: net.spectatorCount,
+                players: [
+                  { name: net.myName, score: 0, round: 1, stage: 1, retriesLeft: MAX_RETRIES },
+                  { name: joinName, score: 0, round: 1, stage: 1, retriesLeft: MAX_RETRIES }
+                ]
+              };
+              broadcastFromHost(matchConfig);
+              startOnlineMatch(matchConfig);
+              hostSystemChat(`[도전자] ${joinName}님이 대결에 입장했습니다!`);
+            } else if (data.role === 'spectator') {
+              if (net.spectators.length >= MAX_SPECTATORS) {
+                conn.send({ type: 'room_full', reason: `관전 정원(${MAX_SPECTATORS}명)이 가득 찼습니다.` });
+                setTimeout(() => { try { conn.close(); } catch (e) {} }, 250);
+                return;
+              }
+              const spEntry = { conn, name: joinName };
+              net.spectators.push(spEntry);
+              net.spectatorCount = net.spectators.length;
+              // Sync full state to the new spectator
+              conn.send({ type: 'spectator_sync', state: buildFullSyncState() });
+              // Notify everyone of updated spectator count
+              broadcastFromHost({ type: 'spectator_count', count: net.spectatorCount });
+              updateHUD();
+              hostSystemChat(`[관전] ${joinName}님이 관전을 시작했습니다. (👀 ${net.spectatorCount}명)`);
+            }
+            return;
+          }
+
+          // Relay & process packets from Guest or Spectator
+          handleNetPacket(data, conn);
+        });
+
+        const onPeerDisconnect = () => {
+          if (conn === net.guestConn) {
+            net.guestConn = null;
+            if (net.matchActive) {
+              net.matchActive = false;
+              broadcastFromHost({ type: 'guest_left', reason: '도전자가 게임에서 나갔습니다.' });
+              updateHUD();
+              document.getElementById('disconnect-reason').textContent = '도전자가 게임에서 나갔습니다.';
+              showModal(elDisconnectModal);
+            }
+          } else {
+            const idx = net.spectators.findIndex((s) => s.conn === conn);
+            if (idx >= 0) {
+              const leftName = net.spectators[idx].name;
+              net.spectators.splice(idx, 1);
+              net.spectatorCount = net.spectators.length;
+              broadcastFromHost({ type: 'spectator_count', count: net.spectatorCount });
+              updateHUD();
+              hostSystemChat(`[관전] ${leftName}님이 퇴장했습니다. (👀 ${net.spectatorCount}명)`);
+            }
+          }
+        };
+
+        conn.on('close', onPeerDisconnect);
+        conn.on('error', onPeerDisconnect);
+      }
+
+      function hostSystemChat(text) {
+        const sysMsg = { system: true, text };
+        appendChatMessage(sysMsg, false);
+        broadcastFromHost({ type: 'chat', system: true, text });
+      }
+
+      // Guest or Spectator connects to Host
+      function setupClientConnection(conn, role) {
         net.conn = conn;
 
         conn.on('open', () => {
           net.connected = true;
-          if (net.role === 'guest') {
-            const myNick = (document.getElementById('online-nick-input').value || '').trim() || '게스트';
-            conn.send({ type: 'join', name: myNick });
-            document.getElementById('join-status-text').textContent = '✅ 연결 완료! 게임을 시작합니다...';
+          conn.send({ type: 'hello', role, name: net.myName });
+          if (role === 'guest') {
+            document.getElementById('join-status-text').textContent = '✅ 연결 완료! 대결을 시작합니다...';
+          } else {
+            document.getElementById('spec-status-text').textContent = '✅ 방에 연결되었습니다! 화면을 동기화합니다...';
           }
         });
 
         conn.on('data', (data) => {
           if (!data || typeof data !== 'object') return;
-          handleNetPacket(data);
+          handleNetPacket(data, conn);
         });
 
         const handleDrop = (reason) => {
-          if (!net.connected && !game.started) return;
+          if (!net.connected) return;
           net.connected = false;
+          net.matchActive = false;
           updateHUD();
-          if (game.mode === 'online' && game.started) {
-            document.getElementById('disconnect-reason').textContent = reason || '상대방과의 연결이 끊어졌습니다.';
+          if (game.mode === 'online') {
+            document.getElementById('disconnect-reason').textContent = reason || '방장과의 연결이 끊어졌습니다.';
             showModal(elDisconnectModal);
           }
         };
 
-        conn.on('close', () => handleDrop('상대방이 게임에서 나갔습니다.'));
-        conn.on('error', () => handleDrop('네트워크 오류가 발생했습니다.'));
+        conn.on('close', () => handleDrop('방장이 방을 닫았거나 연결이 끊어졌습니다.'));
+        conn.on('error', () => handleDrop('네트워크 연결 오류가 발생했습니다.'));
       }
 
-      function handleNetPacket(data) {
+      function handleNetPacket(data, senderConn = null) {
         switch (data.type) {
-          case 'join': {
-            if (net.role !== 'host') return;
-            const hostNick = (document.getElementById('online-nick-input').value || '').trim() || '호스트';
-            const guestNick = (data.name || '').trim() || '게스트';
-            const targetVal = parseInt(document.getElementById('custom-target-input').value, 10);
-            const tScore = Math.max(1, Math.min(999, isNaN(targetVal) ? 10 : targetVal));
-            const matchConfig = {
-              type: 'start_match',
-              targetScore: tScore,
-              speedIdx: game.speedIdx,
-              activeIdx: 0,
-              players: [
-                { name: hostNick, score: 0, round: 1, stage: 1, retriesLeft: MAX_RETRIES },
-                { name: guestNick, score: 0, round: 1, stage: 1, retriesLeft: MAX_RETRIES }
-              ]
-            };
-            sendNet(matchConfig);
-            startOnlineMatch(matchConfig);
+          case 'room_full': {
+            const msg = data.reason || '방에 입장할 수 없습니다.';
+            if (net.role === 'guest') document.getElementById('join-status-text').textContent = `❌ ${msg}`;
+            if (net.role === 'spectator') document.getElementById('spec-status-text').textContent = `❌ ${msg}`;
+            cleanupNetwork();
             break;
           }
           case 'start_match': {
             startOnlineMatch(data);
             break;
           }
+          case 'spectator_sync': {
+            applySpectatorMidGameSync(data.state);
+            break;
+          }
+          case 'spectator_count': {
+            net.spectatorCount = data.count || 0;
+            updateHUD();
+            break;
+          }
+          case 'guest_left': {
+            net.matchActive = false;
+            updateHUD();
+            document.getElementById('disconnect-reason').textContent = data.reason || '도전자가 게임에서 나갔습니다.';
+            showModal(elDisconnectModal);
+            break;
+          }
           case 'gauge': {
+            // If host receives gauge from guest, relay to all spectators
+            if (net.role === 'host' && senderConn === net.guestConn) {
+              broadcastFromHost(data, senderConn);
+            }
             if (isMyTurn()) return;
             game.gaugeVal = data.val;
             if (threeReady) handState.tremble = data.holding ? (curPlayer().stage === 5 ? 0.04 : 0.015) : 0;
@@ -1782,11 +2206,17 @@
             break;
           }
           case 'stage5_roll': {
+            if (net.role === 'host' && senderConn === net.guestConn) {
+              broadcastFromHost(data, senderConn);
+            }
             if (isMyTurn()) return;
             executeStage5Roll({ landedCount: data.landedCount, landedIds: data.landedIds });
             break;
           }
           case 'release': {
+            if (net.role === 'host' && senderConn === net.guestConn) {
+              broadcastFromHost(data, senderConn);
+            }
             if (isMyTurn()) return;
             game.gaugeVal = data.val;
             renderGaugeUI();
@@ -1794,7 +2224,25 @@
             break;
           }
           case 'emoji': {
-            spawnFloatingEmoji(data.emoji, data.sender || '상대방');
+            // Host relays emoji from any client to all other participants
+            if (net.role === 'host' && senderConn) {
+              broadcastFromHost(data, senderConn);
+            }
+            spawnFloatingEmoji(data.emoji, data.sender || '참가자');
+            break;
+          }
+          case 'chat': {
+            // Host relays chat from any client to all other participants
+            if (net.role === 'host' && senderConn) {
+              broadcastFromHost(data, senderConn);
+            }
+            appendChatMessage({
+              system: Boolean(data.system),
+              roleTag: data.roleTag || '관전',
+              sender: data.sender || '익명',
+              text: data.text || '',
+              isSelf: false
+            }, !data.system);
             break;
           }
           case 'speed_change': {
@@ -1803,6 +2251,7 @@
             break;
           }
           case 'rematch_request': {
+            if (net.role === 'spectator') return;
             net.oppRematch = true;
             const statusEl = document.getElementById('rematch-status-text');
             if (net.myRematch) {
@@ -1822,25 +2271,32 @@
           targetScore: game.targetScore,
           speedIdx: game.speedIdx,
           activeIdx: 0,
+          spectatorCount: net.spectatorCount,
           players: [
             { name: game.players[0].name, score: 0, round: 1, stage: 1, retriesLeft: MAX_RETRIES },
             { name: game.players[1].name, score: 0, round: 1, stage: 1, retriesLeft: MAX_RETRIES }
           ]
         };
-        sendNet(matchConfig);
+        broadcastFromHost(matchConfig);
         startOnlineMatch(matchConfig);
+        hostSystemChat('🔄 새로운 대결이 시작되었습니다!');
       }
 
       function createOnlineRoom() {
         if (typeof Peer === 'undefined') {
-          showToast('네트워크 모듈 로드 실패', 'PeerJS CDN이 차단되었거나 오프라인입니다. 1인용/로컬 2인 모드는 정상 이용 가능합니다.', 'fail', 2600);
+          showToast('네트워크 모듈 로드 실패', 'PeerJS CDN에 연결할 수 없습니다. 1인용/로컬 2인 모드를 이용해 주세요.', 'fail', 2600);
           return;
         }
         cleanupNetwork();
+        resetChat();
         const code = String(Math.floor(1000 + Math.random() * 9000));
         net.role = 'host';
         net.myIdx = 0;
         net.roomCode = code;
+        net.myName = (document.getElementById('online-nick-input').value || '').trim() || '방장';
+
+        game.players[0].name = net.myName;
+        game.players[1].name = '대기 중...';
 
         document.getElementById('host-before-create').classList.add('hidden');
         document.getElementById('target-score-box').classList.add('hidden');
@@ -1853,16 +2309,13 @@
           net.peer = peer;
 
           peer.on('open', () => {
-            document.getElementById('host-status-text').textContent = '⏳ 상대방 입장을 기다리는 중...';
+            net.connected = true;
+            document.getElementById('host-status-text').textContent = '⏳ 도전자 입장을 기다리는 중... (관전자도 지금 입장 가능)';
+            updateHUD();
           });
 
           peer.on('connection', (conn) => {
-            if (net.conn && net.conn.open) {
-              conn.close();
-              return;
-            }
-            document.getElementById('host-status-text').textContent = '✅ 상대방 연결 중...';
-            setupPeerConnection(conn);
+            handleHostIncomingConnection(conn);
           });
 
           peer.on('error', (err) => {
@@ -1876,22 +2329,27 @@
         }
       }
 
-      function joinOnlineRoom() {
-        const statusEl = document.getElementById('join-status-text');
+      function connectToOnlineRoom(role) {
+        const isSpec = role === 'spectator';
+        const statusEl = document.getElementById(isSpec ? 'spec-status-text' : 'join-status-text');
+        const inputEl = document.getElementById(isSpec ? 'spec-code-input' : 'join-code-input');
+
         if (typeof Peer === 'undefined') {
-          statusEl.textContent = '❌ 네트워크 모듈(PeerJS)을 불러올 수 없습니다. 인터넷 연결을 확인해 주세요.';
+          statusEl.textContent = '❌ 네트워크 모듈(PeerJS)을 불러올 수 없습니다.';
           return;
         }
-        const code = (document.getElementById('join-code-input').value || '').replace(/\D/g, '');
+        const code = (inputEl.value || '').replace(/\D/g, '');
         if (code.length !== 4) {
-          statusEl.textContent = '⚠️ 4자리 숫자 방 코드를 입력해 주세요.';
+          statusEl.textContent = '⚠️ 4자리 숫자 방 번호를 입력해 주세요.';
           return;
         }
 
         cleanupNetwork();
-        net.role = 'guest';
-        net.myIdx = 1;
+        resetChat();
+        net.role = role;
+        net.myIdx = isSpec ? -1 : 1;
         net.roomCode = code;
+        net.myName = (document.getElementById('online-nick-input').value || '').trim() || (isSpec ? '관전자' : '도전자');
         statusEl.textContent = `🔌 방 ${code}에 연결 중...`;
 
         try {
@@ -1900,12 +2358,12 @@
 
           peer.on('open', () => {
             const conn = peer.connect(PEER_PREFIX + code, { reliable: true });
-            setupPeerConnection(conn);
+            setupClientConnection(conn, role);
           });
 
           peer.on('error', (err) => {
             statusEl.textContent = err && err.type === 'peer-unavailable'
-              ? '❌ 해당 방 코드를 찾을 수 없습니다. 코드를 다시 확인해 주세요.'
+              ? '❌ 해당 방 번호를 찾을 수 없습니다. 번호를 다시 확인해 주세요.'
               : '❌ 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.';
           });
         } catch (err) {
@@ -2299,7 +2757,7 @@
                   `5단 꺾기 +${pts}점으로 목표 점수(${game.targetScore}점)에 먼저 도달했습니다!`;
                 statsEl.innerHTML = `
                   <div>
-                    <div class="text-[11px] text-amber-200/75 truncate">${p1.name}</div>
+                    <div class="text-[11px] text-amber-200/75 truncate">${escapeHtml(p1.name)}</div>
                     <div class="font-display text-xl text-amber-300 mt-0.5">${p1.score}점</div>
                   </div>
                   <div class="border-x border-white/10">
@@ -2307,12 +2765,21 @@
                     <div class="font-display text-xl text-emerald-300 mt-0.5">${p.round}회차</div>
                   </div>
                   <div>
-                    <div class="text-[11px] text-sky-200/75 truncate">${p2.name}</div>
+                    <div class="text-[11px] text-sky-200/75 truncate">${escapeHtml(p2.name)}</div>
                     <div class="font-display text-xl text-sky-300 mt-0.5">${p2.score}점</div>
                   </div>
                 `;
-                restartBtn.textContent = game.mode === 'online' ? '🔄 다시 대결하기' : '다시 하기';
+                if (isSpectator()) {
+                  restartBtn.classList.add('hidden');
+                  const statusEl = document.getElementById('rematch-status-text');
+                  statusEl.textContent = '👀 두 선수가 재대결을 시작하면 자동으로 이어집니다...';
+                  statusEl.classList.remove('hidden');
+                } else {
+                  restartBtn.classList.remove('hidden');
+                  restartBtn.textContent = game.mode === 'online' ? '🔄 다시 대결하기' : '다시 하기';
+                }
               } else {
+                restartBtn.classList.remove('hidden');
                 document.getElementById('victory-title').textContent = '목표 달성! 승리!';
                 document.getElementById('victory-desc').textContent =
                   `5단 꺾기 +${pts}점으로 목표 점수(${game.targetScore}점)를 달성했습니다!`;
@@ -2376,10 +2843,10 @@
       }
 
       /* --------------------------------------------------------------------------
-       * 7. UNIFIED INPUT & UI EVENT LISTENERS
+       * 7. UNIFIED INPUT, CHAT, EMOJI & UI EVENT LISTENERS
        * -------------------------------------------------------------------------- */
       function bindUIEvents() {
-        // Unified Pointer Events on Action Button (no mouse+touch double firing)
+        // Unified Pointer Events on Action Button
         elActionBtn.addEventListener('pointerdown', (e) => {
           e.preventDefault();
           if (isAnyModalOpen() || !isMyTurn()) return;
@@ -2402,11 +2869,12 @@
         window.addEventListener('pointerup', releaseHold);
         window.addEventListener('pointercancel', releaseHold);
 
-        // Keyboard Space Support
+        // Keyboard Space Support (Blocked when typing in INPUT/TEXTAREA)
         window.addEventListener('keydown', (e) => {
           if (e.code === 'Space' && !e.repeat) {
             if (isAnyModalOpen() || !isMyTurn()) return;
-            if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+            const tag = document.activeElement ? document.activeElement.tagName : '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA') return;
             e.preventDefault();
             sound.ensureContext();
             if (game.phase === 'stage5_roll') {
@@ -2426,7 +2894,7 @@
           }
         });
 
-        // Mode Selection (1P vs Local 2P vs Online 2P)
+        // Mode Selection (1P vs Local 2P vs Online)
         const mode1pBtn = document.getElementById('mode-1p-btn');
         const mode2pBtn = document.getElementById('mode-2p-btn');
         const modeOnlineBtn = document.getElementById('mode-online-btn');
@@ -2437,29 +2905,36 @@
 
         const tabHostBtn = document.getElementById('online-tab-host');
         const tabJoinBtn = document.getElementById('online-tab-join');
+        const tabSpecBtn = document.getElementById('online-tab-spectate');
         const hostPanel = document.getElementById('online-host-panel');
         const joinPanel = document.getElementById('online-join-panel');
+        const specPanel = document.getElementById('online-spectate-panel');
 
         let onlineSubTab = 'host';
         function setOnlineSubTab(tab) {
           onlineSubTab = tab;
+          const inactive = 'py-1.5 rounded-lg text-[11px] sm:text-xs font-bold text-amber-100/80 hover:bg-white/10 transition cursor-pointer';
+          tabHostBtn.className = tab === 'host'
+            ? 'py-1.5 rounded-lg text-[11px] sm:text-xs font-bold bg-emerald-500 text-stone-950 transition cursor-pointer' : inactive;
+          tabJoinBtn.className = tab === 'join'
+            ? 'py-1.5 rounded-lg text-[11px] sm:text-xs font-bold bg-emerald-500 text-stone-950 transition cursor-pointer' : inactive;
+          tabSpecBtn.className = tab === 'spectate'
+            ? 'py-1.5 rounded-lg text-[11px] sm:text-xs font-bold bg-purple-400 text-stone-950 transition cursor-pointer' : inactive;
+
+          hostPanel.classList.toggle('hidden', tab !== 'host');
+          joinPanel.classList.toggle('hidden', tab !== 'join');
+          specPanel.classList.toggle('hidden', tab !== 'spectate');
+
           if (tab === 'host') {
-            tabHostBtn.className = 'py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-stone-950 transition cursor-pointer';
-            tabJoinBtn.className = 'py-1.5 rounded-lg text-xs font-bold text-amber-100/80 hover:bg-white/10 transition cursor-pointer';
-            hostPanel.classList.remove('hidden');
-            joinPanel.classList.add('hidden');
             const isWaiting = !document.getElementById('host-waiting-box').classList.contains('hidden');
             targetBox.classList.toggle('hidden', isWaiting);
           } else {
-            tabJoinBtn.className = 'py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-stone-950 transition cursor-pointer';
-            tabHostBtn.className = 'py-1.5 rounded-lg text-xs font-bold text-amber-100/80 hover:bg-white/10 transition cursor-pointer';
-            joinPanel.classList.remove('hidden');
-            hostPanel.classList.add('hidden');
             targetBox.classList.add('hidden');
           }
         }
         tabHostBtn.addEventListener('click', () => setOnlineSubTab('host'));
         tabJoinBtn.addEventListener('click', () => setOnlineSubTab('join'));
+        tabSpecBtn.addEventListener('click', () => setOnlineSubTab('spectate'));
 
         function setModeUI(mode) {
           game.mode = mode;
@@ -2493,7 +2968,7 @@
           });
         });
 
-        // Online Room Buttons
+        // Online Room Controls (Host / Guest / Spectator)
         document.getElementById('create-room-btn').addEventListener('click', () => {
           sound.ensureContext();
           createOnlineRoom();
@@ -2503,32 +2978,78 @@
           document.getElementById('host-waiting-box').classList.add('hidden');
           document.getElementById('host-before-create').classList.remove('hidden');
           targetBox.classList.remove('hidden');
+          updateHUD();
         });
         document.getElementById('copy-code-btn').addEventListener('click', () => {
           if (copyToClipboard(net.roomCode)) {
-            showToast('방 코드 복사 완료!', `코드: ${net.roomCode}`, 'success', 1200);
+            showToast('방 번호 복사 완료!', `코드: ${net.roomCode}`, 'success', 1200);
           }
         });
         document.getElementById('copy-link-btn').addEventListener('click', () => {
-          const baseUrl = window.location.href.split('?')[0];
+          const baseUrl = `${window.location.origin}${window.location.pathname}`;
           const inviteUrl = `${baseUrl}?room=${net.roomCode}`;
           if (copyToClipboard(inviteUrl)) {
-            showToast('초대 링크 복사 완료!', '카카오톡이나 문자로 바로 붙여넣기 하세요', 'success', 1500);
+            showToast('대결 초대 링크 복사 완료!', '카카오톡이나 문자로 붙여넣기 하세요', 'success', 1500);
+          }
+        });
+        document.getElementById('copy-spec-link-btn').addEventListener('click', () => {
+          const baseUrl = `${window.location.origin}${window.location.pathname}`;
+          const specUrl = `${baseUrl}?room=${net.roomCode}&spectate=1`;
+          if (copyToClipboard(specUrl)) {
+            showToast('관전 링크 복사 완료!', '링크를 누르면 바로 관전 모드로 입장합니다', 'success', 1600);
           }
         });
         document.getElementById('join-room-btn').addEventListener('click', () => {
           sound.ensureContext();
-          joinOnlineRoom();
+          connectToOnlineRoom('guest');
+        });
+        document.getElementById('spectate-room-btn').addEventListener('click', () => {
+          sound.ensureContext();
+          connectToOnlineRoom('spectator');
         });
 
-        // Emoji Reaction Buttons
+        // Real-time Chat Controls
+        const chatInput = document.getElementById('chat-input');
+        function submitChat() {
+          if (game.mode !== 'online' || !net.connected) return;
+          const text = (chatInput.value || '').trim();
+          if (!text) return;
+          chatInput.value = '';
+          const payload = {
+            type: 'chat',
+            roleTag: myRoleTag(),
+            sender: net.myName,
+            text
+          };
+          appendChatMessage({ ...payload, isSelf: true }, false);
+          sendNet(payload);
+        }
+        document.getElementById('chat-send-btn').addEventListener('click', submitChat);
+        chatInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submitChat();
+          }
+        });
+        document.getElementById('chat-minimize-btn').addEventListener('click', () => {
+          chatState.isOpen = false;
+          updateChatPanelVisibility();
+        });
+        document.getElementById('chat-toggle-btn').addEventListener('click', () => {
+          chatState.isOpen = true;
+          chatState.unread = 0;
+          updateChatPanelVisibility();
+          renderChatMessages();
+        });
+
+        // Emoji Reaction Buttons (👏 🔥 😂 😱 🎉)
         document.querySelectorAll('.emoji-btn').forEach((btn) => {
           btn.addEventListener('click', () => {
             if (game.mode !== 'online' || !net.connected) return;
             const emoji = btn.dataset.emoji;
-            const myName = game.players[net.myIdx] ? game.players[net.myIdx].name : '나';
-            spawnFloatingEmoji(emoji, myName);
-            sendNet({ type: 'emoji', emoji, sender: myName });
+            const senderLabel = `[${myRoleTag()}] ${net.myName}`;
+            spawnFloatingEmoji(emoji, senderLabel);
+            sendNet({ type: 'emoji', emoji, sender: senderLabel });
           });
         });
 
@@ -2563,7 +3084,7 @@
           customInput.value = game.targetScore;
           highlightPreset(game.targetScore);
           syncSpeedButtonsUI();
-          const canResume = game.started && game.phase !== 'gameover' && game.phase !== 'victory';
+          const canResume = (game.started || isSpectator()) && game.phase !== 'gameover' && game.phase !== 'victory';
           document.getElementById('cancel-settings-btn').classList.toggle('hidden', !canResume);
           showModal(elStartModal);
         });
@@ -2579,12 +3100,14 @@
         // Disconnect Return to Menu Button
         document.getElementById('disconnect-menu-btn').addEventListener('click', () => {
           cleanupNetwork();
+          resetChat();
           game.started = false;
           hideModal(elDisconnectModal);
           document.getElementById('host-waiting-box').classList.add('hidden');
           document.getElementById('host-before-create').classList.remove('hidden');
           document.getElementById('cancel-settings-btn').classList.add('hidden');
           showModal(elStartModal);
+          updateHUD();
         });
 
         // Local 2P Next Turn Button
@@ -2608,7 +3131,7 @@
 
         // Victory & Game Over Restart Buttons
         document.getElementById('victory-restart-btn').addEventListener('click', () => {
-          if (game.mode === 'online' && net.connected) {
+          if (game.mode === 'online' && net.connected && !isSpectator()) {
             net.myRematch = true;
             sendNet({ type: 'rematch_request' });
             if (net.oppRematch) {
@@ -2633,7 +3156,7 @@
         // Top-right Speed & Sound Toggles
         document.getElementById('speed-btn').addEventListener('click', () => {
           if (game.mode === 'online' && net.role !== 'host') {
-            showToast('속도 변경 권한', '온라인 대결에서는 방장(호스트)만 속도를 변경할 수 있습니다.', 'info', 1400);
+            showToast('속도 변경 권한', '온라인 방에서는 방장만 속도를 변경할 수 있습니다.', 'info', 1400);
             return;
           }
           game.speedIdx = (game.speedIdx + 1) % SPEED_PRESETS.length;
@@ -2647,14 +3170,22 @@
           document.getElementById('sound-off-icon').classList.toggle('hidden', sound.enabled);
         });
 
-        // Auto-detect ?room=XXXX invite URL parameter on page load
+        // Auto-detect ?room=XXXX and optional &spectate=1 URL parameters
         try {
-          const urlRoom = new URLSearchParams(window.location.search).get('room');
+          const params = new URLSearchParams(window.location.search);
+          const urlRoom = params.get('room');
+          const isSpecParam = params.get('spectate') === '1';
           if (urlRoom && /^\d{4}$/.test(urlRoom)) {
             setModeUI('online');
-            setOnlineSubTab('join');
-            document.getElementById('join-code-input').value = urlRoom;
-            document.getElementById('join-status-text').textContent = `🔗 초대 링크(${urlRoom})로 접속했습니다! 입장하기를 눌러주세요.`;
+            if (isSpecParam) {
+              setOnlineSubTab('spectate');
+              document.getElementById('spec-code-input').value = urlRoom;
+              document.getElementById('spec-status-text').textContent = `👀 관전 링크(${urlRoom})로 접속했습니다! 관전 입장하기를 눌러주세요.`;
+            } else {
+              setOnlineSubTab('join');
+              document.getElementById('join-code-input').value = urlRoom;
+              document.getElementById('join-status-text').textContent = `🔗 초대 링크(${urlRoom})로 접속했습니다! 대결 입장하기를 눌러주세요.`;
+            }
           }
         } catch (e) {}
       }
